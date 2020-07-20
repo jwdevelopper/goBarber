@@ -7,6 +7,8 @@ import { startOfHour, parseISO, isBefore, format, subHours } from 'date-fns';
 import pt from 'date-fns/locale/pt';
 import { json } from 'sequelize';
 
+import Mail from '../../lib/Mail';
+
 
 class AppointmentController {
 
@@ -110,7 +112,20 @@ class AppointmentController {
     }
 
     async delete(req,res) {
-        const appointment = await Appointment.findByPk(req.params.id);
+        const appointment = await Appointment.findByPk(req.params.id, {
+            include: [
+                {
+                    model: User,
+                    as: 'provider',
+                    attributes: ['name', 'email']
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['name']
+                }
+            ],
+        });
 
         if(appointment.user_id !== req.userId){
             return res.status(401).json({
@@ -129,6 +144,21 @@ class AppointmentController {
         appointment.canceled_at = new Date();
 
         await appointment.save();
+
+        await Mail.sendMail({
+            to: `${appointment.provider.name} <${appointment.provider.email}`,
+            subject: 'Agendamento cancelado',
+            template: 'cancelations',
+            context: {
+                provider: appointment.provider.name,
+                user: appointment.user.name,
+                date: format(
+                    appointment.date,
+                    "'dia' dd 'de' MMMM', às' H:mm'h'",
+                    { locale: pt }
+                )
+            }
+        })
 
         return res.json(appointment); 
     }
